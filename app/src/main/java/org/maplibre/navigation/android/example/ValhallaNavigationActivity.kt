@@ -22,15 +22,14 @@ import org.maplibre.navigation.android.navigation.ui.v5.NavigationLauncher
 import org.maplibre.navigation.android.navigation.ui.v5.NavigationLauncherOptions
 import org.maplibre.navigation.core.models.DirectionsResponse
 import org.maplibre.navigation.core.models.DirectionsRoute
-import org.maplibre.navigation.core.models.RouteOptions
 import org.maplibre.navigation.core.navigation.*
 import org.maplibre.turf.TurfConstants
 import org.maplibre.turf.TurfMeasurement
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
 import org.maplibre.navigation.android.navigation.ui.v5.route.NavigationMapRoute
+import org.maplibre.navigation.android.navigation.ui.v5.route.GenericNavigationRoute
+import retrofit2.Call
+import retrofit2.Callback
+import retrofit2.Response
 import timber.log.Timber
 import java.io.IOException
 import java.util.Locale
@@ -177,7 +176,6 @@ class ValhallaNavigationActivity :
         // It would be better if there was a proper ValhallaService which uses retrofit to
         // generate the API call similar to the DirectionsService for the Mapbox API:
         // https://github.com/mapbox/mapbox-java/blob/main/services-directions/src/main/java/com/mapbox/api/directions/v5/DirectionsService.java
-        // That would allow us to skip adding fake attributes further down as well.
         // But this is the first step to show how the newly added banner_instructions
         // and voice_instructions of Valhalla can be used to generate directions directly:
         val requestBody = mapOf(
@@ -209,71 +207,54 @@ class ValhallaNavigationActivity :
         )
 
         val requestBodyJson = Gson().toJson(requestBody)
-        val client = OkHttpClient()
-
-        // Create request object. Requires valhalla_url to be set in developer-config.xml
-        // Don't use the following server in production, it is for demonstration purposes only:
-        // <string name="valhalla_url" translatable="false">https://valhalla1.openstreetmap.de/route</string>
-        val request = Request.Builder()
+        val requestUrl = buildValhallaRouteUrl()
+        val genericNavigationRoute = GenericNavigationRoute.builder()
+            .requestUrl(requestUrl)
+            .jsonPayload(requestBodyJson)
             .header("User-Agent", "MapLibre Android Navigation SDK Demo App")
-            .url(getString(R.string.valhalla_url))
-            .post(requestBodyJson.toRequestBody("application/json; charset=utf-8".toMediaType()))
             .build()
 
-        Timber.d("calculateRoute enqueued requestBodyJson: %s", requestBodyJson)
-        client.newCall(request).enqueue(object : okhttp3.Callback {
-
-            override fun onFailure(call: okhttp3.Call, e: IOException) {
-                Timber.e(e, "calculateRoute Failed to get route from ValhallaRouting")
-            }
-
-            override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
-                response.use {
-                    if (response.isSuccessful) {
-                        Timber.e(
-                            "calculateRoute to ValhallaRouting successful with status code: %s",
-                            response.code
-                        )
-                        val responseBodyJson = response.body!!.string()
-                        Timber.d(
-                            "calculateRoute ValhallaRouting responseBodyJson: %s",
-                            responseBodyJson
-                        )
-                        val maplibreResponse = DirectionsResponse.fromJson(responseBodyJson);
-                        this@ValhallaNavigationActivity.route = maplibreResponse.routes
-                            .first()
-                            .copy(
-                                routeOptions = RouteOptions(
-                                    // These dummy route options are not not used to create directions,
-                                    // but currently they are necessary to start the navigation
-                                    // and to use the voice instructions.
-                                    // Again, this isn't ideal, but it is a requirement of the framework.
-                                    baseUrl = "https://valhalla.routing",
-                                    profile = "valhalla",
-                                    user = "valhalla",
-                                    accessToken = "valhalla",
-                                    voiceInstructions = true,
-                                    bannerInstructions = true,
-                                    language = language,
-                                    coordinates = listOf(origin, destination),
-                                    requestUuid = "0000-0000-0000-0000"
-                                )
-                            )
-
-                        runOnUiThread {
-                            navigationMapRoute?.addRoutes(maplibreResponse.routes)
-                            binding.startRouteLayout.visibility = View.VISIBLE
-                        }
-                    } else {
-                        Timber.e(
-                            "calculateRoute Request to Valhalla failed with status code: %s: %s",
-                            response.code,
-                            response.body
-                        )
+        Timber.d("calculateRoute to %s enqueued requestBodyJson: %s", requestUrl, requestBodyJson)
+        genericNavigationRoute.getRoute(object : Callback<DirectionsResponse> {
+            override fun onResponse(
+                call: Call<DirectionsResponse>,
+                response: Response<DirectionsResponse>
+            ) {
+                val directionsResponse = response.body()
+                Timber.d("response body: %s", directionsResponse)
+                if (response.isSuccessful && directionsResponse != null) {
+                    Timber.d(
+                        "calculateRoute to Valhalla successful with status code: %s",
+                        response.code()
+                    )
+                    val firstRoute = directionsResponse.routes.firstOrNull()
+                    if (firstRoute == null) {
+                        Timber.w("calculateRoute Valhalla response did not contain any routes")
+                        return
                     }
+                    this@ValhallaNavigationActivity.route = firstRoute
+                    runOnUiThread {
+                        navigationMapRoute?.addRoutes(directionsResponse.routes)
+                        binding.startRouteLayout.visibility = View.VISIBLE
+                    }
+                } else {
+                    Timber.e(
+                        "calculateRoute request to Valhalla failed: code=%s message=%s",
+                        response.code(),
+                        response.errorBody()?.string()
+                    )
                 }
             }
+
+            override fun onFailure(call: Call<DirectionsResponse>, t: Throwable) {
+                Timber.e(t, "calculateRoute Failed to get route from Valhalla")
+            }
         })
+    }
+
+    private fun buildValhallaRouteUrl(): String {
+        val baseUrl = getString(R.string.valhalla_url).trimEnd('/')
+        return "$baseUrl/route"
     }
 
     override fun onResume() {

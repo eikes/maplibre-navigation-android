@@ -93,7 +93,7 @@ Added sample code on how to use the GraphHopper routing server directly in Graph
 - Added directions builder `waypointIndices` to NavigationRoute builder.
 - Added sample code on how to use the Valhalla routing server directly in `ValhallaNavigationActivity`. Please make sure to add this line to the `app/main/res/values/developer-config.xml`:
   ```xml
-    <string name="valhalla_url" translatable="false">https://valhalla1.openstreetmap.de/route</string>
+    <string name="valhalla_url" translatable="false">https://valhalla1.openstreetmap.de/</string>
   ```
 - Fix crash on ManeuverView, caused by `contains` not being able to handle null values [#122](https://github.com/maplibre/maplibre-navigation-android/issues/122)
 

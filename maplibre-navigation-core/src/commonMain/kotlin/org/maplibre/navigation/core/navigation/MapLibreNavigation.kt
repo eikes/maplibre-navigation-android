@@ -273,7 +273,12 @@ open class MapLibreNavigation @JvmOverloads constructor(
      * @since 0.1.0
      */
     fun startNavigation(directionsRoute: DirectionsRoute) {
-        ValidationUtils.validDirectionsRoute(directionsRoute, options.defaultMilestonesEnabled)
+        val shouldValidate = options.defaultMilestonesEnabled && directionsRoute.routeOptions != null
+        if (shouldValidate) {
+            ValidationUtils.validDirectionsRoute(directionsRoute, options.defaultMilestonesEnabled)
+        } else if (options.defaultMilestonesEnabled) {
+            Logger.w { "Default milestones are enabled but the provided route is missing RouteOptions. Skipping ValidationUtils checks." }
+        }
         this.route = directionsRoute
         Logger.d { "MapLibreNavigation startNavigation called." }
 

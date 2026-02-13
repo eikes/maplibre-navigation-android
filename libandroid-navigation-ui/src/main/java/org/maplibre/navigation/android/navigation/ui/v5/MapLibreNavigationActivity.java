@@ -14,11 +14,14 @@ import org.maplibre.navigation.core.navigation.MapLibreNavigationOptions;
 import org.maplibre.navigation.core.navigation.NavigationConstants;
 
 /**
- * Serves as a launching point for the custom drop-in UI, {@link NavigationView}.
+ * Serves as a launching point for the custom drop-in UI,
+ * {@link NavigationView}.
  * <p>
- * Demonstrates the proper setup and usage of the view, including all lifecycle methods.
+ * Demonstrates the proper setup and usage of the view, including all lifecycle
+ * methods.
  */
-public class MapLibreNavigationActivity extends AppCompatActivity implements OnNavigationReadyCallback, NavigationListener {
+public class MapLibreNavigationActivity extends AppCompatActivity
+    implements OnNavigationReadyCallback, NavigationListener {
 
   private NavigationView navigationView;
 
@@ -92,7 +95,8 @@ public class MapLibreNavigationActivity extends AppCompatActivity implements OnN
   public void onNavigationReady(boolean isRunning) {
     NavigationViewOptions.Builder options = NavigationViewOptions.builder();
     options.navigationListener(this);
-    extractRoute(options);
+    DirectionsRoute route = extractRoute();
+    options.directionsRoute(route);
     extractConfiguration(options);
     options.navigationOptions(new MapLibreNavigationOptions());
     navigationView.startNavigation(options.build());
@@ -122,9 +126,8 @@ public class MapLibreNavigationActivity extends AppCompatActivity implements OnN
     }
   }
 
-  private void extractRoute(NavigationViewOptions.Builder options) {
-    DirectionsRoute route = NavigationLauncher.extractRoute(this);
-    options.directionsRoute(route);
+  private DirectionsRoute extractRoute() {
+    return NavigationLauncher.extractRoute(this);
   }
 
   private void extractConfiguration(NavigationViewOptions.Builder options) {

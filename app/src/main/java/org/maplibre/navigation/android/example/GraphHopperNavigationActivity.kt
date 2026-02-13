@@ -22,13 +22,12 @@ import org.maplibre.navigation.android.navigation.ui.v5.NavigationLauncher
 import org.maplibre.navigation.android.navigation.ui.v5.NavigationLauncherOptions
 import org.maplibre.navigation.core.models.DirectionsResponse
 import org.maplibre.navigation.core.models.DirectionsRoute
-import org.maplibre.navigation.core.models.RouteOptions
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
 import org.maplibre.geojson.turf.TurfUnit
 import org.maplibre.navigation.android.navigation.ui.v5.route.NavigationMapRoute
+import org.maplibre.navigation.android.navigation.ui.v5.route.GenericNavigationRoute
+import retrofit2.Call
+import retrofit2.Callback
+import retrofit2.Response
 import timber.log.Timber
 import java.io.IOException
 import java.util.Locale
@@ -182,64 +181,45 @@ class GraphHopperNavigationActivity :
         )
 
         val requestBodyJson = Gson().toJson(requestBody)
-        val client = OkHttpClient()
-
-        // Create request object. Requires graphhopper_url to be set in developer-config.xml
-        val request = Request.Builder()
+        val genericNavigationRoute = GenericNavigationRoute.builder()
+            .requestUrl(getString(R.string.graphhopper_url))
+            .jsonPayload(requestBodyJson)
             .header("User-Agent", "MapLibre Android Navigation SDK Demo App")
-            .url(getString(R.string.graphhopper_url))
-            .post(requestBodyJson.toRequestBody("application/json; charset=utf-8".toMediaType()))
             .build()
 
         Timber.d("calculateRoute enqueued requestBodyJson: %s", requestBodyJson)
-        client.newCall(request).enqueue(object : okhttp3.Callback {
-
-            override fun onFailure(call: okhttp3.Call, e: IOException) {
-                Timber.e(e, "calculateRoute Failed to get route from GraphHopperRouting")
+        genericNavigationRoute.getRoute(object : Callback<DirectionsResponse> {
+            override fun onResponse(
+                call: Call<DirectionsResponse>,
+                response: Response<DirectionsResponse>
+            ) {
+                val directionsResponse = response.body()
+                if (response.isSuccessful && directionsResponse != null) {
+                    Timber.d(
+                        "calculateRoute to GraphHopper successful with status code: %s",
+                        response.code()
+                    )
+                    val firstRoute = directionsResponse.routes.firstOrNull()
+                    if (firstRoute == null) {
+                        Timber.w("calculateRoute GraphHopper response did not contain any routes")
+                        return
+                    }
+                    this@GraphHopperNavigationActivity.route = firstRoute
+                    runOnUiThread {
+                        navigationMapRoute?.addRoutes(directionsResponse.routes)
+                        binding.startRouteLayout.visibility = View.VISIBLE
+                    }
+                } else {
+                    Timber.e(
+                        "calculateRoute request to GraphHopper failed: code=%s message=%s",
+                        response.code(),
+                        response.errorBody()?.string()
+                    )
+                }
             }
 
-            override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
-                response.use {
-                    if (response.isSuccessful) {
-                        Timber.e(
-                            "calculateRoute to GraphHopperRouting successful with status code: %s",
-                            response.code
-                        )
-                        val responseBodyJson = response.body!!.string()
-                        Timber.d(
-                            "calculateRoute GraphHopperRouting responseBodyJson: %s",
-                            responseBodyJson
-                        )
-                        val maplibreResponse = DirectionsResponse.fromJson(responseBodyJson);
-                        this@GraphHopperNavigationActivity.route = maplibreResponse.routes
-                            .first()
-                            .copy(
-                                routeOptions = RouteOptions(
-                                    // See ValhallaNavigationActivity why these dummy route options are necessary
-                                    baseUrl = "https://valhalla.routing",
-                                    profile = "valhalla",
-                                    user = "valhalla",
-                                    accessToken = "valhalla",
-                                    voiceInstructions = true,
-                                    bannerInstructions = true,
-                                    language = language,
-                                    coordinates = listOf(origin, destination),
-                                    requestUuid = "0000-0000-0000-0000"
-                                )
-                            )
-
-                        runOnUiThread {
-                            navigationMapRoute?.addRoutes(maplibreResponse.routes)
-                            binding.startRouteLayout.visibility = View.VISIBLE
-                        }
-                    } else {
-                        Timber.e(
-                            "calculateRoute Request to GraphHopper failed with status code: %s: %s",
-                            response.code,
-                            response.body
-                        )
-                    }
-                }
+            override fun onFailure(call: Call<DirectionsResponse>, t: Throwable) {
+                Timber.e(t, "calculateRoute Failed to get route from GraphHopper")
             }
         })
     }
